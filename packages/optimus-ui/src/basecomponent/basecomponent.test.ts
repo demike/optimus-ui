@@ -1,3 +1,4 @@
+import { DOCUMENT } from '@angular/common';
 import { Component, inject, Injectable, provideZonelessChangeDetection } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { By } from '@angular/platform-browser';
@@ -53,7 +54,19 @@ class StyleTestPart extends BaseComponent {
 })
 class TestHostComponent {}
 
-const styleText = (name: string) => document.head.querySelector(`style[data-optimus-style-id="${name}"]`)?.textContent ?? '';
+const otherDocument = document.implementation.createHTMLDocument();
+
+// Renders the component into another document, like another application in the same realm (e.g. SSR). Only the
+// component's own style uses the provided `UseStyle`; the base styles come from root services and stay in `document`.
+@Component({
+    standalone: true,
+    imports: [StyleTest],
+    template: '<p-styletest />',
+    providers: [{ provide: DOCUMENT, useValue: otherDocument }, UseStyle]
+})
+class OtherDocumentHostComponent {}
+
+const styleText = (name: string, doc: Document = document) => doc.head.querySelector(`style[data-optimus-style-id="${name}"]`)?.textContent ?? '';
 
 describe('BaseComponent', () => {
     describe('$style', () => {
@@ -131,6 +144,7 @@ describe('BaseComponent', () => {
             await createStyleTest();
 
             const clearLoadedStyleNames = vi.spyOn(Base, 'clearLoadedStyleNames');
+            const clearLoadedThemeStyleNames = vi.spyOn(Theme, 'clearLoadedStyleNames');
             const use = vi.spyOn(TestBed.inject(UseStyle), 'use');
 
             await createStyleTest();
@@ -139,10 +153,22 @@ describe('BaseComponent', () => {
             const loadedNames = use.mock.calls.map(([, options]) => options?.name);
 
             expect(clearLoadedStyleNames).not.toHaveBeenCalled();
+            expect(clearLoadedThemeStyleNames).not.toHaveBeenCalled();
             expect(loadedNames).not.toContain('base');
             expect(loadedNames).not.toContain('styletest');
+            expect(loadedNames).not.toContain('styletest-variables');
             expect(Base.isStyleNameLoaded('base')).toBe(true);
             expect(Base.isStyleNameLoaded('styletest')).toBe(true);
+        });
+
+        it('should load the styles again for a component in another document', async () => {
+            await createStyleTest();
+
+            const fixture = TestBed.createComponent(OtherDocumentHostComponent);
+            await fixture.whenStable();
+
+            expect(styleText('styletest', otherDocument)).toContain('--p-styletest-color');
+            expect(styleText('styletest-variables', otherDocument)).toContain('red');
         });
 
         it('should reload the styles of existing components when the theme changes', async () => {

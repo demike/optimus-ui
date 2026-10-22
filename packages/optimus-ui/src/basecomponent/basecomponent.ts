@@ -13,6 +13,8 @@ export const PARENT_INSTANCE = new InjectionToken<BaseComponent>('PARENT_INSTANC
  * What the style names tracked by `Base` (base, global and component CSS) were loaded for. That CSS resolves
  * design tokens against the current theme, the global CSS comes from the pass-through config, and both are
  * written into the current document, so a loaded name only stays valid while none of these change.
+ * The theme style names tracked by `Theme` are reset by `Theme` itself when the theme changes, but they are bound
+ * to the document as well.
  */
 const loadedStyleNamesContext: { document?: Document; theme?: unknown; pt?: unknown } = {};
 
@@ -118,7 +120,8 @@ export class BaseComponent<PT = any> implements Lifecycle {
 
     get $style() {
         // `cx()` and `sx()` read this on every change detection, so the merged object is only rebuilt when one of
-        // its parts changes, e.g. `_componentStyle` is still undefined while the base constructor runs.
+        // its parts changes, e.g. `_componentStyle` is still undefined while the base constructor runs. Style instances
+        // are not modified after construction; a different style means a different `_componentStyle` instance.
         const hostStyle = this._getHostInstance(this)?.$style;
         const componentStyle = this['_componentStyle'];
         const cache = this._styleCache;
@@ -344,9 +347,11 @@ export class BaseComponent<PT = any> implements Lifecycle {
         const theme = Theme.getTheme();
         const pt = untracked(() => this.config?.pt());
         const context = loadedStyleNamesContext;
+        const documentChanged = context.document !== this.document;
 
-        if (context.document !== this.document || context.theme !== theme || context.pt !== pt) {
+        if (documentChanged || context.theme !== theme || context.pt !== pt) {
             Base.clearLoadedStyleNames();
+            if (documentChanged) Theme.clearLoadedStyleNames();
 
             context.document = this.document;
             context.theme = theme;
